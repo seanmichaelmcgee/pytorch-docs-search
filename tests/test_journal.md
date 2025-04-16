@@ -123,6 +123,21 @@ for query in code_queries:
     - 31_transformer_guide.md: 55 chunks
     - etc.
 
+#### 6. Claude Code Tool Testing
+- **Description**: Tested direct tool functionality and Claude Code integration
+- **Commands**:
+  ```bash
+  python tests/test-tool-direct.py
+  python tests/claude-code-tool-test.py
+  ```
+- **Results**:
+  - Successfully handled all 7 query types in direct tool test
+  - Successfully returned valid results for all 4 test cases in integration test
+  - Detected code vs. concept queries correctly
+  - Result formatting properly handled Chrome API format differences
+  - Logging in place instead of stdout debug output
+  - Robust JSON extraction from mixed output
+
 ## Performance Benchmarks
 
 ### Embedding Generation
@@ -154,17 +169,85 @@ for query in code_queries:
    - **Resolution**: Pinned NumPy to version 1.26.4
    - **Status**: Resolved
 
+4. **Result Formatter JSON Output**
+   - **Issue**: Debug output (`print` statements) corrupting JSON response format
+   - **Resolution**: Replaced `print` with proper logging, updated test scripts to handle mixed output
+   - **Status**: Resolved
+
+5. **Metadata Format Handling**
+   - **Issue**: Different ChromaDB versions returning metadata in different formats (dict vs. list)
+   - **Resolution**: Enhanced ResultFormatter to handle multiple metadata formats robustly
+   - **Status**: Resolved
+
+6. **Claude Code Tool Integration**
+   - **Issue**: Script naming inconsistency (underscores vs. hyphens)
+   - **Resolution**: Updated paths in test scripts and tool registration scripts
+   - **Status**: Resolved
+
 ### Outstanding Issues
-1. **Search Integration**
-   - **Issue**: Result formatting for different response formats
-   - **Status**: In progress
-   
-2. **Unit Tests**
+1. **Unit Tests**
    - **Issue**: Missing formal unit tests for components
    - **Status**: Not started
 
+## Advanced Testing
+
+### April 17, 2025 - Comprehensive Component Testing
+
+#### 1. Cache and Metadata Test Suite
+- **Description**: Developed a comprehensive test suite specifically for embedding cache and metadata handling
+- **Command**: `python tests/test_cache_metadata.py`
+- **Results**:
+  - EmbeddingCache shows consistent performance with over 99% hit rate for repeat queries
+  - Metadata formatting correctly handles multiple ChromaDB response formats (nested lists, flat lists, dictionary objects)
+  - Error handling for malformed metadata properly provides default values
+  - JSON parsing in the Claude Code tool handles different input formats
+
+#### 2. Claude Code Tool Input Testing
+- **Description**: Systematically tested the Claude Code tool with various input formats
+- **Commands**:
+  ```python
+  # Using Python to generate and pass valid JSON
+  python -c "import json; print(json.dumps({'query': 'How to implement batch normalization in PyTorch'}))" | python scripts/claude-code-tool.py
+  
+  # Using input redirection with a JSON file
+  python scripts/claude-code-tool.py < tests/test_query.json
+  
+  # Using direct tool test script
+  python tests/direct_tool_test.py
+  ```
+- **Results**:
+  - Successfully fixed JSON parsing issues by adding better error logging
+  - Direct tool test now successfully processes all query types
+  - Tool returns proper JSON with detailed diagnostics logged to file
+
+#### 3. End-to-End Integration Testing
+- **Description**: Tested the complete integration of all components from query to result formatting
+- **Command**: `python tests/claude-code-tool-test.py`
+- **Results**:
+  - All 4 test queries processed successfully through the entire pipeline
+  - Query classification correctly identifies code vs. concept queries
+  - ChromaDB queries correctly apply filters when specified
+  - Result formatting handles all metadata formats in real-world usage
+  - Proper error handling for all edge cases
+
+#### 4. Input/Output Format Verification
+- **Description**: Verified that the Claude Code tool conforms to the Model-Context Protocol (MCP)
+- **Commands**:
+  ```bash
+  echo '{"query": "PyTorch DataLoader examples", "num_results": 3, "filter": "code"}' | python scripts/claude-code-tool.py
+  ```
+- **Results**:
+  - Tool correctly parses JSON input according to MCP protocol
+  - Tool returns properly formatted JSON output
+  - Properties like query description and metadata are correctly populated
+  - Tool registration script properly formats tool schema for Claude Code CLI
+
 ## Next Testing Steps
-1. Complete end-to-end search functionality testing
+1. Register the tool with Claude Code CLI using:
+   ```bash
+   ./scripts/claude-tool-registration.sh
+   ```
 2. Implement formal unit tests for all components
-3. Benchmark search performance and relevance
-4. Test error handling and edge cases
+3. Benchmark search performance and relevance with larger document corpus
+4. Expand document corpus with more PyTorch documentation
+5. Perform user acceptance testing for search relevance

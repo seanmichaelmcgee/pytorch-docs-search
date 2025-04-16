@@ -209,15 +209,36 @@ class ChromaManager:
         try:
             results = collection.query(**query_params)
             
-            # Convert to dictionary for compatibility
-            result_dict = {
-                "ids": results["ids"],
-                "documents": results["documents"],
-                "metadatas": results["metadatas"],
-                "distances": results["distances"]
-            }
+            # Convert to dictionary for compatibility with both old and new ChromaDB versions
+            # Check if results is already a dictionary or a ChromaDB object
+            if hasattr(results, "keys"):
+                # If it's a dictionary-like object (new ChromaDB)
+                result_dict = {
+                    "ids": results["ids"],
+                    "documents": results["documents"],
+                    "metadatas": results["metadatas"],
+                    "distances": results["distances"]
+                }
+            else:
+                # For older versions or different return types
+                logger.warning("Non-dictionary result type from ChromaDB, using custom conversion")
+                result_dict = {
+                    "ids": [results.ids] if hasattr(results, "ids") else [[]],
+                    "documents": [results.documents] if hasattr(results, "documents") else [[]],
+                    "metadatas": [results.metadatas] if hasattr(results, "metadatas") else [[]],
+                    "distances": [results.distances] if hasattr(results, "distances") else [[]]
+                }
             
-            logger.info(f"Query returned {len(result_dict.get('ids', [[]])[0])} results")
+            # Safe way to get result count
+            result_count = 0
+            if "ids" in result_dict and result_dict["ids"]:
+                if isinstance(result_dict["ids"], list) and result_dict["ids"]:
+                    if isinstance(result_dict["ids"][0], list):
+                        result_count = len(result_dict["ids"][0])
+                    else:
+                        result_count = len(result_dict["ids"])
+            
+            logger.info(f"Query returned {result_count} results")
             return result_dict
         except Exception as e:
             logger.error(f"Error during query: {str(e)}")
