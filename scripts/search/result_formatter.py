@@ -10,9 +10,24 @@ class ResultFormatter:
         formatted_results = []
         
         # Extract results from ChromaDB response
-        documents = results.get('documents', [[]])[0]
-        metadatas = results.get('metadatas', [[]])[0]
-        distances = results.get('distances', [[]])[0]
+        # Handle both old and new ChromaDB response formats
+        if results is None:
+            return {
+                "results": [],
+                "query": query,
+                "count": 0
+            }
+            
+        if isinstance(results.get('documents'), list):
+            # New ChromaDB returns flat lists directly
+            documents = results.get('documents', [])
+            metadatas = results.get('metadatas', [])
+            distances = results.get('distances', [])
+        else:
+            # Handle older format that had nested lists
+            documents = results.get('documents', [[]])[0]
+            metadatas = results.get('metadatas', [[]])[0]
+            distances = results.get('distances', [[]])[0]
         
         # Format each result
         for i, (doc, metadata, distance) in enumerate(zip(documents, metadatas, distances)):
