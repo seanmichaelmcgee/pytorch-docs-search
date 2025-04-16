@@ -32,8 +32,10 @@ class ResultFormatter:
         
         # Format each result
         for i, (doc, metadata, distance) in enumerate(zip(documents, metadatas, distances)):
-            # Create a snippet (first 200 chars)
-            snippet = doc[:200] + "..." if len(doc) > 200 else doc
+            # Adjust snippet length based on number of results
+            # Fewer results can have longer snippets, more results need shorter snippets
+            max_snippet_length = 300 if len(documents) <= 3 else 150
+            snippet = doc[:max_snippet_length] + "..." if len(doc) > max_snippet_length else doc
             
             # Convert distance to similarity score (1.0 is exact match)
             # Handle potential non-scalar distance values (e.g., lists)

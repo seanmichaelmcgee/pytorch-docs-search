@@ -4,8 +4,25 @@
 SCRIPT_DIR=$(dirname "$(readlink -f "$0")")
 TOOL_PATH="$SCRIPT_DIR/claude-code-tool.py"
 
-# Make sure the tool script is executable
-chmod +x "$TOOL_PATH"
+# Validate that the tool path exists
+if [ ! -f "$TOOL_PATH" ]; then
+  echo "Error: Tool script not found at $TOOL_PATH"
+  exit 1
+fi
+
+# Check if the tool is executable
+if [ ! -x "$TOOL_PATH" ]; then
+  echo "Making tool executable..."
+  chmod +x "$TOOL_PATH"
+  
+  # Verify the chmod was successful
+  if [ ! -x "$TOOL_PATH" ]; then
+    echo "Error: Failed to make tool executable. Check file permissions."
+    exit 1
+  fi
+fi
+
+echo "Using tool script: $TOOL_PATH"
 
 # Define the tool description
 TOOL_NAME="pytorch_search"

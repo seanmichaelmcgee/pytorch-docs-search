@@ -4,6 +4,7 @@ import sys
 import json
 import os
 import logging
+import signal
 from typing import Dict, Any, Optional
 
 # Setup logging
@@ -14,15 +15,58 @@ logging.basicConfig(
 )
 logger = logging.getLogger("claude_code_tool")
 
+# Timeout handler for operations
+class TimeoutError(Exception):
+    """Exception raised when an operation times out."""
+    pass
+
+def timeout_handler(signum, frame):
+    """Signal handler for timeout."""
+    raise TimeoutError("Operation timed out")
+
 # Add project root to Python path
 script_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(script_dir))
 
 # Import search functionality
-from scripts.search.query_processor import QueryProcessor
-from scripts.search.result_formatter import ResultFormatter
-from scripts.database.chroma_manager import ChromaManager
-from scripts.config import MAX_RESULTS
+try:
+    from scripts.search.query_processor import QueryProcessor
+    from scripts.search.result_formatter import ResultFormatter
+    from scripts.database.chroma_manager import ChromaManager
+    from scripts.config import MAX_RESULTS, OPENAI_API_KEY
+except ImportError as e:
+    logger.error(f"Error importing modules: {e}")
+    # Try alternative import paths (for when running directly)
+    try:
+        sys.path.append(script_dir)
+        from search.query_processor import QueryProcessor
+        from search.result_formatter import ResultFormatter
+        from database.chroma_manager import ChromaManager
+        from config import MAX_RESULTS, OPENAI_API_KEY
+    except ImportError as e2:
+        logger.error(f"Alternative import path also failed: {e2}")
+        # Fallback defaults
+        MAX_RESULTS = 5
+        OPENAI_API_KEY = None
+
+# Check for API key availability
+if not OPENAI_API_KEY:
+    logger.warning("OPENAI_API_KEY not found in environment, checking user config")
+    try:
+        home_dir = os.path.expanduser("~")
+        config_path = os.path.join(home_dir, ".pytorch_docs_config")
+        if os.path.exists(config_path):
+            with open(config_path, "r") as f:
+                config = json.load(f)
+                OPENAI_API_KEY = config.get("openai_api_key")
+                if OPENAI_API_KEY:
+                    logger.info("Found API key in user config")
+                    # Set environment variable for modules that need it
+                    os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
+                else:
+                    logger.error("No API key found in user config")
+    except Exception as e:
+        logger.error(f"Error loading fallback configuration: {e}")
 
 def search_pytorch_docs(query: str, num_results: int = MAX_RESULTS, filter_type: Optional[str] = None) -> Dict[str, Any]:
     """
@@ -39,51 +83,77 @@ def search_pytorch_docs(query: str, num_results: int = MAX_RESULTS, filter_type:
     try:
         logger.info(f"Received search query: '{query}'")
         
+        # Check if running as Claude Code tool and limit results if needed
+        is_claude_tool = 'CLAUDE_MCP_TOOL' in os.environ
+        if is_claude_tool:
+            # Restrict results when running in Claude to optimize context window usage
+            num_results = min(num_results, 3)
+            logger.info(f"Running as Claude tool, limiting results to {num_results}")
+        
         # Initialize components
         query_processor = QueryProcessor()
         result_formatter = ResultFormatter()
         db_manager = ChromaManager()
         
-        # Process the query
-        logger.info("Processing query...")
-        query_data = query_processor.process_query(query)
+        # Set up timeout for operations (10 seconds)
+        signal.signal(signal.SIGALRM, timeout_handler)
+        signal.alarm(10)
         
-        # Prepare filters
-        filters = {}
-        if filter_type:
-            filters["chunk_type"] = filter_type
-            logger.info(f"Using filter: chunk_type={filter_type}")
-        
-        # Search the database
-        logger.info("Searching database...")
-        results = db_manager.query(
-            query_data["embedding"],
-            n_results=num_results,
-            filters=filters if filters else None
-        )
-        
-        # Format the results
-        logger.info("Formatting results...")
-        formatted_results = result_formatter.format_results(results, query)
-        
-        # Rank results based on query type
-        ranked_results = result_formatter.rank_results(
-            formatted_results,
-            query_data["is_code_query"]
-        )
-        
-        # Log result summary
-        result_count = len(ranked_results.get("results", []))
-        logger.info(f"Found {result_count} results for query")
-        
-        # Add additional context for Claude
-        ranked_results["claude_context"] = {
-            "is_code_query": query_data["is_code_query"],
-            "query_description": "code-related" if query_data["is_code_query"] else "conceptual"
-        }
-        
-        return ranked_results
-        
+        try:
+            # Process the query
+            logger.info("Processing query...")
+            query_data = query_processor.process_query(query)
+            
+            # Prepare filters
+            filters = {}
+            if filter_type:
+                filters["chunk_type"] = filter_type
+                logger.info(f"Using filter: chunk_type={filter_type}")
+            
+            # Search the database
+            logger.info("Searching database...")
+            results = db_manager.query(
+                query_data["embedding"],
+                n_results=num_results,
+                filters=filters if filters else None
+            )
+            
+            # Format the results
+            logger.info("Formatting results...")
+            formatted_results = result_formatter.format_results(results, query)
+            
+            # Rank results based on query type
+            ranked_results = result_formatter.rank_results(
+                formatted_results,
+                query_data["is_code_query"]
+            )
+            
+            # Cancel alarm as operations completed successfully
+            signal.alarm(0)
+            
+            # Log result summary
+            result_count = len(ranked_results.get("results", []))
+            logger.info(f"Found {result_count} results for query")
+            
+            # Add additional context for Claude
+            ranked_results["claude_context"] = {
+                "is_code_query": query_data["is_code_query"],
+                "query_description": "code-related" if query_data["is_code_query"] else "conceptual"
+            }
+            
+            return ranked_results
+            
+        except TimeoutError:
+            logger.error("Search operation timed out")
+            signal.alarm(0)  # Cancel the alarm
+            return {
+                "error": "Search operation timed out after 10 seconds",
+                "query": query,
+                "results": [],
+                "count": 0,
+                "timeout": True
+            }
+            
     except Exception as e:
         logger.error(f"Error during search: {str(e)}")
         return {
