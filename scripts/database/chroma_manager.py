@@ -1,7 +1,6 @@
 import os
 import logging
 import chromadb
-from chromadb.config import Settings
 from typing import List, Dict, Any, Optional, Union
 import json
 import gc
@@ -30,11 +29,7 @@ class ChromaManager:
         
         # Initialize the client with optimized settings for large vectors
         logger.info(f"Initializing ChromaDB at {persist_directory}")
-        self.client = chromadb.Client(Settings(
-            persist_directory=self.persist_directory,
-            anonymized_telemetry=False,
-            chroma_db_impl="duckdb+parquet",  # More efficient for larger embeddings
-        ))
+        self.client = chromadb.PersistentClient(path=self.persist_directory)
     
     def reset_collection(self) -> None:
         """Delete and recreate the collection with optimized settings for large vectors."""
@@ -61,7 +56,7 @@ class ChromaManager:
     def get_collection(self):
         """Get or create the collection with optimized settings."""
         try:
-            self.collection = self.client.get_collection(self.collection_name)
+            self.collection = self.client.get_collection(name=self.collection_name)
             logger.info(f"Retrieved existing collection '{self.collection_name}'")
         except Exception as e:
             # Collection doesn't exist, create it with optimized settings
@@ -213,8 +208,17 @@ class ChromaManager:
         # Execute query
         try:
             results = collection.query(**query_params)
-            logger.info(f"Query returned {len(results.get('ids', [[]])[0])} results")
-            return results
+            
+            # Convert to dictionary for compatibility
+            result_dict = {
+                "ids": results["ids"],
+                "documents": results["documents"],
+                "metadatas": results["metadatas"],
+                "distances": results["distances"]
+            }
+            
+            logger.info(f"Query returned {len(result_dict.get('ids', [[]])[0])} results")
+            return result_dict
         except Exception as e:
             logger.error(f"Error during query: {str(e)}")
             # Return empty results as fallback
@@ -246,7 +250,7 @@ class ChromaManager:
                 is_sample = False
                 
             # Calculate statistics
-            total_chunks = count if is_sample else len(results.get("ids", []))
+            total_chunks = count if is_sample else len(results["ids"])
             
             # Count by chunk type
             chunk_types = {}
@@ -264,7 +268,7 @@ class ChromaManager:
             
             # If using a sample, scale up the counts
             if is_sample and total_chunks > 0:
-                scale_factor = count / len(results.get("ids", []))
+                scale_factor = count / len(results["ids"])
                 for key in chunk_types:
                     chunk_types[key] = int(chunk_types[key] * scale_factor)
                 for key in sources:
