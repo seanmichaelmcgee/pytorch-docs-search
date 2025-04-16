@@ -1,0 +1,62 @@
+{
+  "How to implement a transformer block in PyTorch": {
+    "filter": "code",
+    "result_count": 1,
+    "timing": {
+      "query_processing": 0.018595457077026367,
+      "database_search": 0.16659092903137207,
+      "result_formatting": 2.0265579223632812e-05,
+      "total": 0.18520665168762207
+    }
+  },
+  "Custom autograd function example": {
+    "filter": "code",
+    "result_count": 1,
+    "timing": {
+      "query_processing": 0.02141404151916504,
+      "database_search": 0.01068735122680664,
+      "result_formatting": 1.8596649169921875e-05,
+      "total": 0.0321199893951416
+    }
+  },
+  "Implementing batch normalization in PyTorch": {
+    "filter": null,
+    "result_count": 1,
+    "timing": {
+      "query_processing": 0.0191500186920166,
+      "database_search": 0.006798505783081055,
+      "result_formatting": 1.71661376953125e-05,
+      "total": 0.02596569061279297
+    }
+  },
+  "What is autograd in PyTorch?": {
+    "filter": "text",
+    "result_count": 1,
+    "timing": {
+      "query_processing": 0.01972818374633789,
+      "database_search": 0.004966259002685547,
+      "result_formatting": 1.5020370483398438e-05,
+      "total": 0.024709463119506836
+    }
+  },
+  "Explain backpropagation in PyTorch": {
+    "filter": null,
+    "result_count": 1,
+    "timing": {
+      "query_processing": 0.017083168029785156,
+      "database_search": 0.006433010101318359,
+      "result_formatting": 1.6450881958007812e-05,
+      "total": 0.023532629013061523
+    }
+  },
+  "Difference between nn.Module and nn.functional": {
+    "filter": null,
+    "result_count": 1,
+    "timing": {
+      "query_processing": 0.018889188766479492,
+      "database_search": 0.0067768096923828125,
+      "result_formatting": 1.7642974853515625e-05,
+      "total": 0.02568364143371582
+    }
+  }
+}
