@@ -1,16 +1,13 @@
-import openai
 import logging
 from typing import List, Dict, Any
 import gc
+from openai import OpenAI
 
 from scripts.config import OPENAI_API_KEY, EMBEDDING_MODEL, EMBEDDING_DIMENSIONS
 from scripts.embedding.cache import EmbeddingCache
 
 # Setup logger
 logger = logging.getLogger("query_processor")
-
-# Configure OpenAI API from environment variable
-openai.api_key = OPENAI_API_KEY
 
 class QueryProcessor:
     def __init__(self, model: str = EMBEDDING_MODEL, use_cache: bool = True):
@@ -21,6 +18,9 @@ class QueryProcessor:
             use_cache: Whether to use cache for query embeddings
         """
         self.model = model
+        
+        # Initialize OpenAI client
+        self.client = OpenAI(api_key=OPENAI_API_KEY)
         
         # Cache for storing query embeddings (reuses the embedding cache)
         if use_cache:
@@ -56,11 +56,11 @@ class QueryProcessor:
         
         # Generate embedding via API
         try:
-            response = openai.Embedding.create(
+            response = self.client.embeddings.create(
                 input=query,
                 model=self.model
             )
-            embedding = response["data"][0]["embedding"]
+            embedding = response.data[0].embedding
             
             # Cache the embedding
             if self.cache:

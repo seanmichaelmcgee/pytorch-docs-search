@@ -7,7 +7,7 @@ import argparse
 import numpy as np
 import logging
 from typing import List, Dict, Any
-import openai
+from openai import OpenAI
 from tqdm import tqdm
 
 from scripts.config import OPENAI_API_KEY, EMBEDDING_MODEL
@@ -19,9 +19,6 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger("benchmark")
-
-# Configure OpenAI API
-openai.api_key = OPENAI_API_KEY
 
 # Test queries for code semantics
 CODE_QUERIES = [

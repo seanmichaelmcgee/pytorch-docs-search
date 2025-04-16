@@ -1,11 +1,12 @@
 import os
 import json
-import openai
 import time
 import logging
 import gc
 from tqdm import tqdm
 from typing import List, Dict, Any, Optional
+from openai import OpenAI
+from openai.types.create_embedding_response import CreateEmbeddingResponse 
 
 from scripts.config import (
     OPENAI_API_KEY, 
@@ -20,9 +21,6 @@ from scripts.embedding.cache import EmbeddingCache
 # Setup logger
 logger = logging.getLogger("embedding_generator")
 
-# Configure OpenAI API from environment variable
-openai.api_key = OPENAI_API_KEY
-
 class EmbeddingGenerator:
     def __init__(self, model: str = EMBEDDING_MODEL, use_cache: bool = True):
         """Initialize the embedding generator.
@@ -32,6 +30,9 @@ class EmbeddingGenerator:
             use_cache: Whether to use the embedding cache
         """
         self.model = model
+        
+        # Initialize OpenAI client
+        self.client = OpenAI(api_key=OPENAI_API_KEY)
         
         # Initialize cache if enabled
         if use_cache:
@@ -53,11 +54,11 @@ class EmbeddingGenerator:
         
         # Generate embedding via API
         try:
-            response = openai.Embedding.create(
+            response = self.client.embeddings.create(
                 input=text,
                 model=self.model
             )
-            embedding = response["data"][0]["embedding"]
+            embedding = response.data[0].embedding
             
             # Cache the result
             if self.cache:
@@ -112,12 +113,12 @@ class EmbeddingGenerator:
                 
                 for attempt in range(max_retries):
                     try:
-                        response = openai.Embedding.create(
+                        response = self.client.embeddings.create(
                             input=uncached_texts,
                             model=self.model
                         )
                         
-                        api_embeddings = [item["embedding"] for item in response["data"]]
+                        api_embeddings = [item.embedding for item in response.data]
                         
                         # Cache the results
                         if self.cache:
