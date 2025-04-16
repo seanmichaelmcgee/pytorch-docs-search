@@ -117,13 +117,44 @@ def verify_tool_response(response: Dict[str, Any]) -> bool:
     """
     print("\nVerifying tool response format...")
     
-    # Check for error
-    if "error" in response:
+    # Special handling for error with graceful degradation
+    if "error" in response and not response.get("status", {}).get("is_partial", False):
         print(f"✗ Response contains an error: {response['error']}")
         return False
     
+    # Special handling for partial responses due to timeouts
+    is_partial = response.get("status", {}).get("is_partial", False)
+    if is_partial:
+        print(f"ℹ Response contains partial results due to timeout or error")
+        print(f"  Error: {response.get('error', 'No error message')}")
+        print(f"  Stages completed: {response.get('status', {}).get('stages_completed', [])}")
+        print(f"  Stages timed out: {response.get('status', {}).get('stages_timed_out', [])}")
+        
+        # For partial responses, we require at least the status field
+        if "status" not in response:
+            print("✗ Partial response missing 'status' field")
+            return False
+            
+        # If we have partial results, they should be in a list
+        if "results" in response and not isinstance(response["results"], list):
+            print("✗ 'results' field is not a list")
+            return False
+            
+        # Even partial responses should have query and count
+        if "query" not in response:
+            print("✗ Response is missing 'query' field")
+            return False
+            
+        if "count" not in response:
+            print("✗ Response is missing 'count' field")
+            return False
+            
+        print("✓ Partial response has valid format")
+        return True
+    
+    # Normal response validation
     # Check required fields
-    required_fields = ["results", "query", "count"]
+    required_fields = ["results", "query", "count", "status"]
     missing_fields = [field for field in required_fields if field not in response]
     
     if missing_fields:
@@ -131,6 +162,15 @@ def verify_tool_response(response: Dict[str, Any]) -> bool:
         return False
     
     print("✓ Response contains all required fields")
+    
+    # Check status field
+    if not isinstance(response["status"], dict):
+        print("✗ 'status' field is not a dictionary")
+        return False
+        
+    if "complete" not in response["status"]:
+        print("✗ 'status' is missing 'complete' field")
+        return False
     
     # Check results structure
     if not isinstance(response["results"], list):
@@ -158,6 +198,16 @@ def verify_tool_response(response: Dict[str, Any]) -> bool:
         return False
     
     print("✓ Score values are valid")
+    
+    # Check for confidence scores
+    if "claude_context" in response:
+        context = response["claude_context"]
+        if "intent_confidence" in context:
+            confidence = context["intent_confidence"]
+            if not isinstance(confidence, float) or confidence < 0 or confidence > 1:
+                print(f"✗ Intent confidence is not a float between 0 and 1: {confidence}")
+                return False
+            print(f"✓ Intent confidence score is valid: {confidence:.2f}")
     
     # All checks passed
     return True

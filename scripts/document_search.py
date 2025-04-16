@@ -40,11 +40,18 @@ class DocumentSearch:
             # Format the results
             formatted_results = self.result_formatter.format_results(results, query)
             
-            # Rank results based on query type
+            # Rank results based on query type and confidence
             ranked_results = self.result_formatter.rank_results(
                 formatted_results,
-                query_data["is_code_query"]
+                query_data["is_code_query"],
+                query_data.get("intent_confidence", 0.75)  # Use confidence if available
             )
+            
+            # Add query metadata to results
+            ranked_results["query_metadata"] = {
+                "is_code_query": query_data["is_code_query"],
+                "intent_confidence": query_data.get("intent_confidence", 0.75)
+            }
             
             return ranked_results
             

@@ -5,7 +5,11 @@ import json
 import os
 import logging
 import signal
-from typing import Dict, Any, Optional
+import time
+from typing import Dict, Any, Optional, List
+
+# Global state for custom timeout stages
+_current_stages = None
 
 # Setup logging
 logging.basicConfig(
@@ -70,7 +74,7 @@ if not OPENAI_API_KEY:
 
 def search_pytorch_docs(query: str, num_results: int = MAX_RESULTS, filter_type: Optional[str] = None) -> Dict[str, Any]:
     """
-    Search PyTorch documentation using the vector database.
+    Search PyTorch documentation using the vector database with progressive timeout.
     
     Args:
         query: The search query about PyTorch
@@ -78,7 +82,7 @@ def search_pytorch_docs(query: str, num_results: int = MAX_RESULTS, filter_type:
         filter_type: Optional filter for 'code' or 'text' results
         
     Returns:
-        Dictionary containing search results
+        Dictionary containing search results, potentially partial if timeouts occur
     """
     try:
         logger.info(f"Received search query: '{query}'")
@@ -95,14 +99,72 @@ def search_pytorch_docs(query: str, num_results: int = MAX_RESULTS, filter_type:
         result_formatter = ResultFormatter()
         db_manager = ChromaManager()
         
-        # Set up timeout for operations (10 seconds)
-        signal.signal(signal.SIGALRM, timeout_handler)
-        signal.alarm(10)
+        # Initialize result tracking for progressive timeout
+        partial_results = {
+            "query": query,
+            "results": [],
+            "count": 0,
+            "status": {
+                "complete": False,
+                "stages_completed": [],
+                "stages_timed_out": [],
+                "is_partial": False
+            }
+        }
         
+        # Define the stages and their timeouts (use custom timeouts if available)
+        global _current_stages
+        if _current_stages:
+            stages = _current_stages
+            logger.info(f"Using custom timeouts: {stages}")
+        else:
+            stages = [
+                {"name": "query_processing", "timeout": 2},  # 2 seconds for query processing
+                {"name": "database_search", "timeout": 5},   # 5 seconds for database search
+                {"name": "result_formatting", "timeout": 1}  # 1 second for result formatting
+            ]
+        
+        query_data = None
+        raw_results = None
+        formatted_results = None
+        
+        # Setup signal handler for timeouts
+        signal.signal(signal.SIGALRM, timeout_handler)
+        
+        # Stage 1: Process the query
         try:
-            # Process the query
-            logger.info("Processing query...")
+            logger.info("Stage 1: Processing query...")
+            signal.alarm(stages[0]["timeout"])
+            
             query_data = query_processor.process_query(query)
+            
+            # Track successful completion
+            signal.alarm(0)
+            partial_results["status"]["stages_completed"].append("query_processing")
+            
+            # Store essential query metadata for partial results
+            partial_results["intent"] = {
+                "is_code_query": query_data["is_code_query"],
+                "intent_confidence": query_data.get("intent_confidence", 0.75)
+            }
+            
+        except TimeoutError:
+            logger.warning("Query processing timed out")
+            signal.alarm(0)
+            partial_results["status"]["stages_timed_out"].append("query_processing")
+            partial_results["status"]["is_partial"] = True
+            partial_results["error"] = "Query processing timed out after 2 seconds"
+            return partial_results
+        
+        # Cannot proceed without query data
+        if not query_data:
+            partial_results["error"] = "Failed to process query"
+            return partial_results
+        
+        # Stage 2: Search the database
+        try:
+            logger.info("Stage 2: Searching database...")
+            signal.alarm(stages[1]["timeout"])
             
             # Prepare filters
             filters = {}
@@ -111,48 +173,110 @@ def search_pytorch_docs(query: str, num_results: int = MAX_RESULTS, filter_type:
                 logger.info(f"Using filter: chunk_type={filter_type}")
             
             # Search the database
-            logger.info("Searching database...")
-            results = db_manager.query(
+            raw_results = db_manager.query(
                 query_data["embedding"],
                 n_results=num_results,
                 filters=filters if filters else None
             )
             
-            # Format the results
-            logger.info("Formatting results...")
-            formatted_results = result_formatter.format_results(results, query)
+            # Track successful completion
+            signal.alarm(0)
+            partial_results["status"]["stages_completed"].append("database_search")
             
-            # Rank results based on query type
+        except TimeoutError:
+            logger.warning("Database search timed out")
+            signal.alarm(0)
+            partial_results["status"]["stages_timed_out"].append("database_search")
+            partial_results["status"]["is_partial"] = True
+            partial_results["error"] = "Database search timed out after 5 seconds"
+            
+            # If we got query processing data, add it to the response
+            partial_results["claude_context"] = {
+                "is_code_query": query_data["is_code_query"],
+                "intent_confidence": query_data.get("intent_confidence", 0.75),
+                "query_description": "code-related" if query_data["is_code_query"] else "conceptual"
+            }
+            
+            return partial_results
+        
+        # Stage 3: Format and rank results
+        try:
+            logger.info("Stage 3: Formatting results...")
+            signal.alarm(stages[2]["timeout"])
+            
+            # Format the results
+            formatted_results = result_formatter.format_results(raw_results, query)
+            
+            # Rank results based on query type and confidence
             ranked_results = result_formatter.rank_results(
                 formatted_results,
-                query_data["is_code_query"]
+                query_data["is_code_query"],
+                query_data.get("intent_confidence", 0.75)  # Use confidence if available
             )
             
-            # Cancel alarm as operations completed successfully
+            # Track successful completion
             signal.alarm(0)
+            partial_results["status"]["stages_completed"].append("result_formatting")
+            partial_results["status"]["complete"] = True
             
-            # Log result summary
+            # Update with complete results
             result_count = len(ranked_results.get("results", []))
             logger.info(f"Found {result_count} results for query")
             
             # Add additional context for Claude
             ranked_results["claude_context"] = {
                 "is_code_query": query_data["is_code_query"],
+                "intent_confidence": query_data.get("intent_confidence", 0.75),
                 "query_description": "code-related" if query_data["is_code_query"] else "conceptual"
+            }
+            
+            # Mark the process as complete
+            ranked_results["status"] = {
+                "complete": True,
+                "stages_completed": partial_results["status"]["stages_completed"],
+                "is_partial": False
             }
             
             return ranked_results
             
         except TimeoutError:
-            logger.error("Search operation timed out")
-            signal.alarm(0)  # Cancel the alarm
-            return {
-                "error": "Search operation timed out after 10 seconds",
-                "query": query,
-                "results": [],
-                "count": 0,
-                "timeout": True
+            logger.warning("Result formatting timed out")
+            signal.alarm(0)
+            partial_results["status"]["stages_timed_out"].append("result_formatting")
+            partial_results["status"]["is_partial"] = True
+            partial_results["error"] = "Result formatting timed out after 1 second"
+            
+            # Return partial results with raw database results if available
+            if raw_results:
+                # Create minimal formatted results
+                basic_results = []
+                for i, (doc_id, score) in enumerate(zip(raw_results['ids'][0], raw_results['distances'][0])):
+                    # Convert distance to score (1 - distance for cosine similarity)
+                    similarity_score = 1.0 - score
+                    
+                    # Extract basic metadata
+                    metadata = raw_results['metadatas'][0][i]
+                    
+                    basic_results.append({
+                        "id": doc_id,
+                        "score": similarity_score,
+                        "chunk_type": metadata.get("chunk_type", "unknown"),
+                        "title": metadata.get("title", "Unknown Title"),
+                        "source": metadata.get("source", "Unknown Source"),
+                        "snippet": raw_results['documents'][0][i][:200] + "..." if len(raw_results['documents'][0][i]) > 200 else raw_results['documents'][0][i]
+                    })
+                
+                partial_results["results"] = basic_results
+                partial_results["count"] = len(basic_results)
+            
+            # Add query intent information
+            partial_results["claude_context"] = {
+                "is_code_query": query_data["is_code_query"],
+                "intent_confidence": query_data.get("intent_confidence", 0.75),
+                "query_description": "code-related" if query_data["is_code_query"] else "conceptual"
             }
+            
+            return partial_results
             
     except Exception as e:
         logger.error(f"Error during search: {str(e)}")
@@ -160,7 +284,12 @@ def search_pytorch_docs(query: str, num_results: int = MAX_RESULTS, filter_type:
             "error": str(e),
             "query": query,
             "results": [],
-            "count": 0
+            "count": 0,
+            "status": {
+                "complete": False,
+                "error_type": "exception",
+                "is_partial": True
+            }
         }
 
 def process_mcp_input() -> Dict[str, Any]:
@@ -168,7 +297,7 @@ def process_mcp_input() -> Dict[str, Any]:
     Process input according to the Model-Context Protocol (MCP).
     
     Returns:
-        Processed tool response
+        Processed tool response with progressive timeout support
     """
     try:
         # Read input from stdin (MCP sends a JSON object)
@@ -180,36 +309,86 @@ def process_mcp_input() -> Dict[str, Any]:
             input_data = json.loads(stdin_data)
         except json.JSONDecodeError as e:
             logger.error(f"JSON decode error: {str(e)}, input: {stdin_data[:100]}")
-            return {"error": f"Invalid JSON input: {str(e)}", "results": [], "count": 0}
+            return {
+                "error": f"Invalid JSON input: {str(e)}", 
+                "results": [], 
+                "count": 0,
+                "status": {"complete": False, "error_type": "json_parse", "is_partial": True}
+            }
         
         # Extract query and parameters
         query = input_data.get("query", "")
         if not query:
             logger.warning("No query provided in input")
-            return {"error": "No query provided", "results": [], "count": 0}
+            return {
+                "error": "No query provided", 
+                "results": [], 
+                "count": 0,
+                "status": {"complete": False, "error_type": "missing_query", "is_partial": True}
+            }
         
         # Get optional parameters
         num_results = input_data.get("num_results", MAX_RESULTS)
         filter_type = input_data.get("filter", None)
+        
+        # Get custom timeouts if provided
+        custom_timeouts = input_data.get("timeouts", {})
+        query_timeout = custom_timeouts.get("query_processing", 2)  # Default 2s
+        search_timeout = custom_timeouts.get("database_search", 5)   # Default 5s
+        format_timeout = custom_timeouts.get("result_formatting", 1) # Default 1s
         
         # Log received parameters
         logger.info(f"Query: '{query}'")
         logger.info(f"Number of results: {num_results}")
         if filter_type:
             logger.info(f"Filter type: {filter_type}")
+        if custom_timeouts:
+            logger.info(f"Custom timeouts: {custom_timeouts}")
         
-        # Perform search
-        return search_pytorch_docs(query, num_results, filter_type)
+        # Set up custom stages with provided timeouts
+        stages = [
+            {"name": "query_processing", "timeout": query_timeout},
+            {"name": "database_search", "timeout": search_timeout},
+            {"name": "result_formatting", "timeout": format_timeout}
+        ]
+        
+        # Store stages in global state for the search function to use
+        global _current_stages
+        _current_stages = stages
+        
+        # Perform search with progressive timeout
+        result = search_pytorch_docs(query, num_results, filter_type)
+        
+        # Add timestamp and query metadata
+        result["timestamp"] = time.time()
+        result["count"] = len(result.get("results", []))
+        
+        # Add partial result notification if needed
+        if result.get("status", {}).get("is_partial", False):
+            logger.warning("Returning partial results due to timeout or error")
+            result["warning"] = "This response contains partial results due to operation timeout."
+        
+        return result
         
     except json.JSONDecodeError as e:
         logger.error(f"Invalid JSON input: {str(e)}")
-        return {"error": "Invalid JSON input", "results": [], "count": 0}
+        return {
+            "error": "Invalid JSON input", 
+            "results": [], 
+            "count": 0,
+            "status": {"complete": False, "error_type": "json_parse", "is_partial": True}
+        }
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}")
-        return {"error": str(e), "results": [], "count": 0}
+        return {
+            "error": str(e), 
+            "results": [], 
+            "count": 0,
+            "status": {"complete": False, "error_type": "exception", "is_partial": True}
+        }
 
 def main():
-    """Main entry point for the Claude Code tool."""
+    """Main entry point for the Claude Code tool with progressive timeout support."""
     try:
         # Process the input
         result = process_mcp_input()
@@ -218,12 +397,26 @@ def main():
         json_result = json.dumps(result)
         print(json_result)
         
-        # Log completion
-        logger.info("Successfully completed search request")
+        # Log completion with status
+        if result.get("status", {}).get("is_partial", False):
+            logger.info("Completed search request with partial results")
+            logger.info(f"Stages completed: {result.get('status', {}).get('stages_completed', [])}")
+            logger.info(f"Stages timed out: {result.get('status', {}).get('stages_timed_out', [])}")
+        else:
+            logger.info("Successfully completed search request with full results")
         
     except Exception as e:
         logger.error(f"Fatal error: {str(e)}")
-        error_response = json.dumps({"error": f"Fatal error: {str(e)}", "results": [], "count": 0})
+        error_response = json.dumps({
+            "error": f"Fatal error: {str(e)}", 
+            "results": [], 
+            "count": 0,
+            "status": {
+                "complete": False,
+                "error_type": "fatal_exception",
+                "is_partial": True
+            }
+        })
         print(error_response)
 
 if __name__ == "__main__":

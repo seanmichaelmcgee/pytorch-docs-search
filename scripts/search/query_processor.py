@@ -79,7 +79,7 @@ class QueryProcessor:
             raise
     
     def process_query(self, query: str) -> Dict[str, Any]:
-        """Process a query to extract intent and generate embedding.
+        """Process a query to extract intent and generate embedding with confidence scoring.
         
         Args:
             query: The search query text
@@ -89,17 +89,23 @@ class QueryProcessor:
             - query: The original query text
             - embedding: The embedding vector
             - is_code_query: Whether the query is likely looking for code
+            - intent_confidence: Confidence score for the classification (0.0-1.0)
         """
         # Basic preprocessing
         query = query.strip()
         
-        # Detect query type (code vs. concept)
-        is_code_query = self._is_code_query(query)
-        logger.info(f"Query '{query[:50]}...' classified as " + 
-                  ("code query" if is_code_query else "concept query"))
-        
         # Generate embedding
         embedding = self.generate_embedding(query)
+        
+        # Compute intent score with confidence
+        intent_data = self._compute_query_intent(query)
+        is_code_query = intent_data["is_code_query"]
+        confidence = intent_data["confidence"]
+        
+        # Log query classification with confidence score
+        logger.info(f"Query '{query[:50]}...' classified as " + 
+                  ("code query" if is_code_query else "concept query") +
+                  f" with confidence {confidence:.2f}")
         
         # Verify embedding dimensions
         if len(embedding) != EMBEDDING_DIMENSIONS:
@@ -111,42 +117,84 @@ class QueryProcessor:
         return {
             "query": query,
             "embedding": embedding,
-            "is_code_query": is_code_query
+            "is_code_query": is_code_query,
+            "intent_confidence": confidence
         }
     
-    def _is_code_query(self, query: str) -> bool:
-        """Determine if a query is likely looking for code examples.
-        
-        This function analyzes the query text to determine if the user is looking
-        for code examples or implementation details vs. conceptual information.
+    def _compute_query_intent(self, query: str) -> Dict[str, Any]:
+        """Determine if a query is looking for code with confidence scoring.
         
         Args:
             query: The search query text
             
         Returns:
-            True if the query appears to be looking for code, False otherwise
+            Dictionary with query intent classification:
+            - is_code_query: Whether the query is likely looking for code
+            - confidence: Confidence score for the classification (0.0-1.0)
         """
-        # Look for code-related keywords
-        code_indicators = [
-            "code", "example", "implementation", "function", "class",
-            "method", "snippet", "syntax", "API", "parameter", "argument",
-            "return", "import", "module", "library", "package",
-            "how to", "how do i", "sample", "usage", "call", "invoke",
-            "instantiate", "create", "initialize", "define"
-        ]
-        
         query_lower = query.lower()
+        score = 0.0
+        max_score = 0.0
+        
+        # Code indicator patterns with weights
+        code_indicators = {
+            # Strong indicators (weight 2.0)
+            "code": 2.0, "example": 2.0, "implementation": 2.0,
+            "function": 2.0, "class": 2.0, "method": 2.0, 
+            "snippet": 2.0, "syntax": 2.0, 
+            
+            # Medium indicators (weight 1.5)
+            "parameter": 1.5, "argument": 1.5, "return": 1.5, 
+            "import": 1.5, "module": 1.5, "api": 1.5,
+            
+            # Weaker indicators (weight 1.0)
+            "library": 1.0, "package": 1.0, "how to": 1.0, 
+            "how do i": 1.0, "sample": 1.0, "usage": 1.0,
+            "call": 1.0, "invoke": 1.0, "instantiate": 1.0,
+            "create": 1.0, "initialize": 1.0, "define": 1.0
+        }
+        
+        # Concept indicator patterns with negative weights
+        concept_indicators = {
+            "what is": -1.5, "explain": -1.5, "difference between": -1.5,
+            "why": -1.5, "concept": -1.5, "understand": -1.5,
+            "meaning": -1.5, "how does": -1.5, "when to use": -1.0,
+            "purpose": -1.0, "versus": -1.0, "vs": -1.0,
+            "compare": -1.0, "comparison": -1.0, "trade-off": -1.0,
+            "tradeoff": -1.0, "limitation": -1.0, "advantage": -1.0,
+            "disadvantage": -1.0, "problem": -1.0, "issue": -1.0
+        }
+        
+        # Calculate maximum possible score
+        max_score = sum(weight for weight in code_indicators.values())
         
         # Check for code indicators
-        for indicator in code_indicators:
-            if indicator.lower() in query_lower:
-                return True
+        for indicator, weight in code_indicators.items():
+            if indicator in query_lower:
+                score += weight
         
-        # Check for Python/PyTorch code patterns
+        # Check for concept indicators (negative weight)
+        for indicator, weight in concept_indicators.items():
+            if indicator in query_lower:
+                score += weight  # Weight is negative
+        
+        # Check for comparative queries (special handling)
+        comparative_patterns = ["vs", "versus", "compared to", "or", "better than"]
+        if any(pattern in query_lower for pattern in comparative_patterns):
+            # Lower the confidence for comparative queries
+            score *= 0.8
+        
+        # Check for negative queries (special handling)
+        negative_patterns = ["not ", "without", "instead of", "avoid"]
+        if any(pattern in query_lower for pattern in negative_patterns):
+            # Reduce confidence for negative queries
+            score *= 0.7
+        
+        # Python/PyTorch code patterns (strong indicators - weight 2.5)
         code_patterns = [
             "def ", "class ", "import ", "from ", "torch.", "nn.",
             "self.", "->", "=>", "==", "!=", "+=", "-=", "*=", "/=",
-            "():", "@", "if __name__", "__init__", "super()", 
+            "():", "@", "if __name__", "__init__", "super()",
             ".cuda()", ".to(", ".backward(", ".forward(", ".parameters()",
             "optimizer.", "loss.", "dataset.", "dataloader", "model.",
             "tensor(", ".view(", ".reshape("
@@ -154,6 +202,19 @@ class QueryProcessor:
         
         for pattern in code_patterns:
             if pattern in query:
-                return True
+                score += 2.5
+                max_score += 2.5  # Add to max possible score
         
-        return False
+        # Normalize the score to confidence between 0.0 and 1.0
+        # We center the range so the midpoint (0.5) represents uncertainty
+        normalized_score = (score + max_score) / (2 * max_score + 0.001)
+        
+        # A score > 0.5 indicates code intent, with confidence proportional to distance from 0.5
+        return {
+            "is_code_query": normalized_score > 0.5,
+            "confidence": normalized_score 
+        }
+    
+    def _is_code_query(self, query: str) -> bool:
+        """Legacy method for backward compatibility."""
+        return self._compute_query_intent(query)["is_code_query"]

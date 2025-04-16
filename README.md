@@ -9,8 +9,10 @@ This tool enables developers to efficiently search PyTorch documentation using n
 **Key Features:**
 - Code-aware document processing that preserves code block integrity
 - Semantic search powered by OpenAI embeddings
-- Query intent detection (code vs concept)
-- Local operation with minimal dependencies
+- Query intent detection with confidence scoring
+- Auto-tuning of HNSW search parameters
+- Embedding cache with versioning and drift detection
+- Progressive timeout with partial results
 - Claude Code CLI integration
 - Incremental document updates
 
@@ -183,11 +185,12 @@ Advanced settings can be modified in `scripts/config/__init__.py`.
 
 ### Search Process
 
-1. **Query Analysis**: Determines if the query is code-focused or concept-focused
-2. **Embedding Generation**: Creates a vector representation of the query
-3. **Vector Search**: Finds semantically similar chunks in the database
-4. **Result Ranking**: Boosts code examples for code queries, explanations for concept queries
-5. **Formatting**: Returns structured results with relevant snippets and metadata
+1. **Query Analysis**: Analyzes the query with confidence scoring to determine if it's code-focused or concept-focused
+2. **Embedding Generation**: Creates a vector representation of the query with caching for efficiency
+3. **Vector Search**: Finds semantically similar chunks in the database using auto-tuned HNSW parameters
+4. **Progressive Timeout**: Implements staged timeouts to provide partial results rather than failures
+5. **Result Ranking**: Applies confidence-based boosting for code examples or explanations based on query intent
+6. **Formatting**: Returns structured results with relevant snippets and metadata, adapting to available time
 
 ## 🚧 Maintenance
 
