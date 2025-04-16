@@ -21,6 +21,28 @@ from scripts.embedding.cache import EmbeddingCache
 # Setup logger
 logger = logging.getLogger("embedding_generator")
 
+def get_optimal_batch_size():
+    """Dynamically adjust batch size based on document characteristics and available memory"""
+    try:
+        import psutil
+        available_memory = psutil.virtual_memory().available / (1024 * 1024 * 1024)  # GB
+        # Simple heuristic - smaller batches for less memory
+        if available_memory < 2:  # Less than 2GB available
+            logger.info(f"Low memory available ({available_memory:.2f}GB), using small batch size of 5")
+            return 5
+        elif available_memory < 4:  # Less than 4GB available
+            logger.info(f"Limited memory available ({available_memory:.2f}GB), using moderate batch size of 10")
+            return 10
+        elif available_memory < 8:  # Less than 8GB available
+            logger.info(f"Moderate memory available ({available_memory:.2f}GB), using default batch size of 20")
+            return 20
+        else:
+            logger.info(f"Sufficient memory available ({available_memory:.2f}GB), using larger batch size of 50")
+            return 50
+    except ImportError:
+        logger.info("psutil not available, using conservative default batch size")
+        return 20  # Default conservative batch size if psutil unavailable
+
 class EmbeddingGenerator:
     def __init__(self, model: str = EMBEDDING_MODEL, use_cache: bool = True):
         """Initialize the embedding generator.
@@ -70,7 +92,7 @@ class EmbeddingGenerator:
             # Return zeros as fallback
             return [0.0] * EMBEDDING_DIMENSIONS
     
-    def _batch_embed(self, texts: List[str], batch_size: int = EMBEDDING_BATCH_SIZE) -> List[List[float]]:
+    def _batch_embed(self, texts: List[str], batch_size: Optional[int] = None) -> List[List[float]]:
         """Generate embeddings for a batch of texts.
         
         Uses caching and handles larger embedding dimensions with appropriate
@@ -78,11 +100,14 @@ class EmbeddingGenerator:
         
         Args:
             texts: List of texts to embed
-            batch_size: Number of texts to embed in each API call (default: 10)
+            batch_size: Number of texts to embed in each API call (if None, determined dynamically)
         
         Returns:
             List of embeddings, one for each input text
         """
+        # Determine optimal batch size if not provided
+        if batch_size is None:
+            batch_size = get_optimal_batch_size()
         all_embeddings = []
         
         # Process in batches to avoid API limits and memory issues
@@ -164,12 +189,12 @@ class EmbeddingGenerator:
         
         return all_embeddings
     
-    def embed_chunks(self, chunks: List[Dict[str, Any]], batch_size: int = EMBEDDING_BATCH_SIZE) -> List[Dict[str, Any]]:
+    def embed_chunks(self, chunks: List[Dict[str, Any]], batch_size: Optional[int] = None) -> List[Dict[str, Any]]:
         """Generate embeddings for a list of chunks.
         
         Args:
             chunks: List of chunks to embed
-            batch_size: Number of chunks to embed in each API call
+            batch_size: Number of chunks to embed in each API call (if None, determined dynamically)
             
         Returns:
             List of chunks with embeddings added
@@ -177,14 +202,18 @@ class EmbeddingGenerator:
         # Extract texts from chunks
         texts = [chunk["text"] for chunk in chunks]
         
-        logger.info(f"Generating embeddings for {len(texts)} chunks using model {self.model}...")
-        print(f"Generating embeddings for {len(texts)} chunks using model {self.model}...")
+        # Determine optimal batch size if not provided
+        if batch_size is None:
+            batch_size = get_optimal_batch_size()
+        
+        logger.info(f"Generating embeddings for {len(texts)} chunks using model {self.model} with batch size {batch_size}...")
+        print(f"Generating embeddings for {len(texts)} chunks using model {self.model} with batch size {batch_size}...")
         
         # For large sets, process in smaller batches to manage memory
         embeddings = []
         
-        # Process in manageable segments
-        segment_size = 500  # Adjust based on memory availability
+        # Process in manageable segments (also dynamically sized)
+        segment_size = min(500, batch_size * 25)  # Scale segment size with batch size
         for i in range(0, len(texts), segment_size):
             end_idx = min(i + segment_size, len(texts))
             logger.info(f"Processing segment {i//segment_size + 1}/{(len(texts)-1)//segment_size + 1} ({i} to {end_idx})")
@@ -250,8 +279,22 @@ class EmbeddingGenerator:
     
     def _process_large_chunks_file(self, chunks: List[Dict[str, Any]], output_file: str) -> List[Dict[str, Any]]:
         """Process a large collection in stages with intermediate saves."""
-        # Split into smaller batches
-        batch_size = 500  # Process 500 chunks at a time
+        # Determine optimal segment size based on memory availability
+        try:
+            import psutil
+            available_memory = psutil.virtual_memory().available / (1024 * 1024 * 1024)  # GB
+            # Adjust batch size based on available memory
+            if available_memory < 4:  # Less than 4GB available
+                batch_size = 100
+            elif available_memory < 8:  # Less than 8GB available
+                batch_size = 250
+            else:
+                batch_size = 500
+            logger.info(f"Memory-optimized batch size: {batch_size} chunks (available memory: {available_memory:.2f}GB)")
+        except ImportError:
+            batch_size = 250  # Conservative default
+            logger.info(f"Using conservative default batch size: {batch_size} chunks (psutil not available)")
+            
         chunk_batches = [chunks[i:i+batch_size] for i in range(0, len(chunks), batch_size)]
         
         logger.info(f"Processing {len(chunks)} chunks in {len(chunk_batches)} batches")

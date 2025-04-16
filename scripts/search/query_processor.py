@@ -1,3 +1,4 @@
+import os
 import logging
 from typing import List, Dict, Any
 import gc
@@ -25,11 +26,14 @@ class QueryProcessor:
         # Cache for storing query embeddings (reuses the embedding cache)
         if use_cache:
             from scripts.config import EMBEDDING_CACHE_DIR, EMBEDDING_CACHE_MAX_SIZE_GB
+            # Ensure queries subdirectory exists
+            query_cache_dir = os.path.join(EMBEDDING_CACHE_DIR, 'queries')
+            os.makedirs(query_cache_dir, exist_ok=True)
             self.cache = EmbeddingCache(
-                EMBEDDING_CACHE_DIR + '/queries',
+                query_cache_dir,
                 max_size_gb=EMBEDDING_CACHE_MAX_SIZE_GB / 10  # Use smaller cache for queries
             )
-            logger.info(f"Query embedding cache initialized")
+            logger.info(f"Query embedding cache initialized at {query_cache_dir}")
         else:
             self.cache = None
     

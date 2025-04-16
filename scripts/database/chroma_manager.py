@@ -10,6 +10,28 @@ from scripts.config import DB_DIR, COLLECTION_NAME, EMBEDDING_DIMENSIONS
 # Setup logger
 logger = logging.getLogger("chroma_manager")
 
+def get_optimal_batch_size():
+    """Dynamically adjust batch size based on available memory for ChromaDB operations"""
+    try:
+        import psutil
+        available_memory = psutil.virtual_memory().available / (1024 * 1024 * 1024)  # GB
+        # Simple heuristic - smaller batches for less memory
+        if available_memory < 2:  # Less than 2GB available
+            logger.info(f"Low memory available ({available_memory:.2f}GB), using small batch size of 10")
+            return 10
+        elif available_memory < 4:  # Less than 4GB available
+            logger.info(f"Limited memory available ({available_memory:.2f}GB), using moderate batch size of 25")
+            return 25
+        elif available_memory < 8:  # Less than 8GB available
+            logger.info(f"Moderate memory available ({available_memory:.2f}GB), using default batch size of 50")
+            return 50
+        else:
+            logger.info(f"Sufficient memory available ({available_memory:.2f}GB), using larger batch size of 100")
+            return 100
+    except ImportError:
+        logger.info("psutil not available, using conservative default batch size")
+        return 25  # Default conservative batch size if psutil unavailable
+
 class ChromaManager:
     def __init__(self, persist_directory: str = DB_DIR, collection_name: str = COLLECTION_NAME):
         """Initialize the ChromaDB manager for handling large embedding vectors.
@@ -30,6 +52,47 @@ class ChromaManager:
         # Initialize the client with optimized settings for large vectors
         logger.info(f"Initializing ChromaDB at {persist_directory}")
         self.client = chromadb.PersistentClient(path=self.persist_directory)
+        
+    def _ensure_vector_format(self, embedding):
+        """Ensure vector is in the correct format for ChromaDB.
+        
+        Handles type conversion, dimension checking, and ensures consistent
+        vector format for ChromaDB operations.
+        
+        Args:
+            embedding: Vector embedding in any format
+            
+        Returns:
+            Properly formatted embedding vector
+        """
+        # Handle empty or None embeddings
+        if not embedding:
+            logger.warning("Empty embedding received, using zero vector")
+            return [0.0] * EMBEDDING_DIMENSIONS
+            
+        # Handle NumPy arrays and other array-like objects
+        if hasattr(embedding, "tolist"):
+            embedding = embedding.tolist()
+            
+        # Ensure all values are Python floats
+        try:
+            embedding = [float(x) for x in embedding]
+        except (TypeError, ValueError) as e:
+            logger.error(f"Error converting embedding values to float: {e}")
+            return [0.0] * EMBEDDING_DIMENSIONS
+        
+        # Verify dimensions
+        if len(embedding) != EMBEDDING_DIMENSIONS:
+            logger.warning(f"Expected {EMBEDDING_DIMENSIONS} dimensions but got {len(embedding)}")
+            # Pad or truncate if necessary
+            if len(embedding) < EMBEDDING_DIMENSIONS:
+                logger.info(f"Padding embedding from {len(embedding)} to {EMBEDDING_DIMENSIONS} dimensions")
+                embedding.extend([0.0] * (EMBEDDING_DIMENSIONS - len(embedding)))
+            else:
+                logger.info(f"Truncating embedding from {len(embedding)} to {EMBEDDING_DIMENSIONS} dimensions")
+                embedding = embedding[:EMBEDDING_DIMENSIONS]
+                
+        return embedding
     
     def reset_collection(self) -> None:
         """Delete and recreate the collection with optimized settings for large vectors."""
@@ -40,14 +103,14 @@ class ChromaManager:
             # Collection might not exist yet
             logger.info(f"No existing collection to delete: {str(e)}")
         
-        # Create a new collection with optimized HNSW index settings
+        # Create a new collection with improved HNSW index settings
         self.collection = self.client.create_collection(
             name=self.collection_name,
             metadata={
                 "hnsw:space": "cosine",          # Use cosine similarity for text embeddings
-                "hnsw:construction_ef": 128,     # Higher value = better recall, slower construction
-                "hnsw:search_ef": 96,            # Higher value = better recall, slower search
-                "hnsw:M": 16                     # Higher value = better recall, more memory
+                "hnsw:construction_ef": 200,     # Increased from 128 for better recall
+                "hnsw:search_ef": 128,           # Increased from 96 for better search quality
+                "hnsw:M": 16                     # Keep as is for memory efficiency
             }
         )
         logger.info(f"Created new collection '{self.collection_name}' with optimized settings")
@@ -65,25 +128,28 @@ class ChromaManager:
                 name=self.collection_name,
                 metadata={
                     "hnsw:space": "cosine",
-                    "hnsw:construction_ef": 128,
-                    "hnsw:search_ef": 96,
-                    "hnsw:M": 16
+                    "hnsw:construction_ef": 200,  # Increased from 128 for better recall
+                    "hnsw:search_ef": 128,        # Increased from 96 for better search quality
+                    "hnsw:M": 16                  # Keep as is for memory efficiency
                 }
             )
             logger.info(f"Created new collection '{self.collection_name}'")
         
         return self.collection
     
-    def add_chunks(self, chunks: List[Dict[str, Any]], batch_size: int = 50) -> None:
+    def add_chunks(self, chunks: List[Dict[str, Any]], batch_size: Optional[int] = None) -> None:
         """Add chunks to the collection.
         
-        Optimized for adding large embedding vectors by using smaller batch sizes
+        Optimized for adding large embedding vectors by using memory-aware batch sizing
         and explicitly freeing memory after each batch.
         
         Args:
             chunks: List of chunks with embeddings to add
-            batch_size: Number of chunks to add in each batch (reduced for larger vectors)
+            batch_size: Number of chunks to add in each batch (if None, determined dynamically)
         """
+        # Determine optimal batch size if not provided
+        if batch_size is None:
+            batch_size = get_optimal_batch_size()
         collection = self.get_collection()
         
         # Verify embedding dimensions
@@ -107,12 +173,12 @@ class ChromaManager:
             end_idx = min(i + batch_size, len(chunks))
             batch_num = i // batch_size + 1
             
-            # Check for empty embeddings and replace with zeros
-            batch_embeddings = embeddings[i:end_idx]
-            for j, emb in enumerate(batch_embeddings):
-                if not emb or len(emb) == 0:
-                    batch_embeddings[j] = [0.0] * EMBEDDING_DIMENSIONS
-                    logger.warning(f"Replaced empty embedding at index {i+j}")
+            # Process each embedding to ensure correct format
+            batch_embeddings = []
+            for j, emb in enumerate(embeddings[i:end_idx]):
+                # Apply robust type handling to each embedding
+                processed_emb = self._ensure_vector_format(emb)
+                batch_embeddings.append(processed_emb)
             
             try:
                 collection.add(
@@ -132,13 +198,13 @@ class ChromaManager:
                 logger.error(f"Error adding batch {batch_num}: {str(e)}")
                 print(f"Error adding batch {batch_num}: {str(e)}")
     
-    def load_from_file(self, filepath: str, reset: bool = True, batch_size: int = 50) -> None:
+    def load_from_file(self, filepath: str, reset: bool = True, batch_size: Optional[int] = None) -> None:
         """Load chunks from a file into ChromaDB.
         
         Args:
             filepath: Path to the JSON file containing chunks with embeddings
             reset: Whether to reset the collection before loading
-            batch_size: Number of chunks to add in each batch
+            batch_size: Number of chunks to add in each batch (if None, determined dynamically)
         """
         logger.info(f"Loading chunks from {filepath}...")
         print(f"Loading chunks from {filepath}...")
@@ -190,9 +256,8 @@ class ChromaManager:
         """
         collection = self.get_collection()
         
-        # Verify query embedding dimensions
-        if len(query_embedding) != EMBEDDING_DIMENSIONS and len(query_embedding) > 0:
-            logger.warning(f"Query embedding has {len(query_embedding)} dimensions, expected {EMBEDDING_DIMENSIONS}")
+        # Ensure query embedding has the correct format
+        query_embedding = self._ensure_vector_format(query_embedding)
         
         # Prepare query parameters
         query_params = {
