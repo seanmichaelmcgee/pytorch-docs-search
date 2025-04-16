@@ -9,6 +9,7 @@ This file documents test results and findings during the development of the PyTo
 - Query Processing
 - Search Functionality
 - Performance Monitoring
+- Code Structure Optimization
 
 ## Test Results
 
@@ -242,12 +243,48 @@ for query in code_queries:
   - Properties like query description and metadata are correctly populated
   - Tool registration script properly formats tool schema for Claude Code CLI
 
+### April 17, 2025 - Robust Code Structure Chunking
+
+#### 1. Chunking Optimization Implementation
+- **Description**: Implemented the "Robust Code Structure Chunking" enhancement
+- **Components Modified**:
+  - `scripts/document_processing/chunker.py`
+  - New test file: `tests/test_robust_chunking.py`
+- **Results**:
+  - Successfully identified and preserved decorator chains with their functions
+  - Correctly handled multi-line strings containing code-like syntax
+  - Properly identified single-line class definitions
+  - Filtering of chunk points that are too close together works correctly
+
+#### 2. Testing Improvements
+- **Description**: Created test cases for enhanced code structure chunking
+- **Command**: `python -m tests.test_robust_chunking`
+- **Results**:
+  - Test for decorator chain detection: Passed
+  - Test for multiline string handling: Passed
+  - Test for single-line class definition handling: Passed
+  - Overall syntax structure preservation significantly improved
+
+#### 3. Document Reindexing
+- **Description**: Tested document indexing with improved chunking
+- **Commands**:
+  ```python
+  python -m scripts.index_documents --docs-dir ./pytorch_docs/PyTorch.docs --output-file ./data/pytorch_indexed_chunks.json
+  python -m scripts.index_documents --docs-dir ./docs --output-file ./data/betaband_indexed_chunks.json
+  ```
+- **Results**:
+  - PyTorch docs: 5339 chunks (compared to 6255 previously)
+  - BetaBand docs: 349 chunks (compared to 429 previously)
+  - Reduction in total chunks: Approximately 15% fewer chunks
+  - More semantically coherent code chunks with preserved structure
+
 ## Next Testing Steps
 1. Register the tool with Claude Code CLI using:
    ```bash
    ./scripts/claude-tool-registration.sh
    ```
-2. Implement formal unit tests for all components
-3. Benchmark search performance and relevance with larger document corpus
-4. Expand document corpus with more PyTorch documentation
-5. Perform user acceptance testing for search relevance
+2. Generate embeddings for the newly chunked documents
+3. Load both document sets into ChromaDB
+4. Implement formal unit tests for all components
+5. Benchmark search performance and relevance with larger document corpus
+6. Perform user acceptance testing for search relevance

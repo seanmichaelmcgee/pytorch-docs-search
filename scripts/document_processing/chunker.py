@@ -3,10 +3,11 @@ from typing import List, Dict, Any
 import re
 
 class DocumentChunker:
-    def __init__(self, chunk_size: int = 1000, overlap: int = 200):
+    def __init__(self, chunk_size: int = 1000, overlap: int = 200, min_distance: int = 5):
         """Initialize the chunker with size parameters."""
         self.chunk_size = chunk_size
         self.overlap = overlap
+        self.min_distance = min_distance  # Minimum lines between chunk points
     
     def chunk_text(self, text: str, metadata: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Chunk text sections while preserving semantic boundaries."""
@@ -59,32 +60,91 @@ class DocumentChunker:
         """Find good splitting points in code (class/function definitions)."""
         chunk_points = []
         
-        # Look for function/class definitions
+        # Enhanced patterns to better detect Python syntax structures
         patterns = [
+            # Basic patterns
             r'^\s*def\s+\w+\s*\(',  # Function definitions
             r'^\s*class\s+\w+\s*[:\(]',  # Class definitions
-            r'^\s*@',  # Decorators (often before functions/methods)
-            r'^\s*#\s*\w+',  # Section comments
             r'^\s*if\s+__name__\s*==\s*[\'"]__main__[\'"]\s*:',  # Main block
+            
+            # Decorator patterns - match start of decorator chains
+            r'^\s*@\w+(\.\w+)*',  # Decorator start
+            
+            # Comment section markers
+            r'^\s*#\s*\w+',  # Section comments
+            r'^\s*"""',  # Docstring start/end
+            r'^\s*\'\'\'',  # Alternate docstring start/end
+            
+            # Additional Python structures
+            r'^\s*async\s+def\s+',  # Async function
         ]
+        
+        # Track potential multi-line structures
+        in_decorator_chain = False
+        in_multiline_string = False
+        string_delimiter = None
         
         line_start_positions = [0]
         for i, char in enumerate(code):
             if char == '\n':
                 line_start_positions.append(i + 1)
         
-        for line_start in line_start_positions:
+        # First pass: mark significant boundaries
+        for i, line_start in enumerate(line_start_positions):
             line_end = code.find('\n', line_start)
             if line_end == -1:
                 line_end = len(code)
             
             line = code[line_start:line_end]
             
-            # Check if line matches any pattern
-            for pattern in patterns:
-                if re.match(pattern, line):
-                    chunk_points.append(line_start)
-                    break
+            # Handle multi-line string detection
+            if '"""' in line or "'''" in line:
+                # Toggle multiline string state
+                if not in_multiline_string:
+                    in_multiline_string = True
+                    string_delimiter = '"""' if '"""' in line else "'''"
+                elif string_delimiter in line:
+                    in_multiline_string = False
+                    string_delimiter = None
+            
+            # Skip pattern matching if in multiline string
+            if in_multiline_string:
+                continue
+                
+            # Handle decorator chain detection
+            if line.strip().startswith('@'):
+                in_decorator_chain = True
+                # Mark the start of decorator chain as potential split point
+                chunk_points.append(line_start)
+            elif in_decorator_chain and (line.strip().startswith('def ') or line.strip().startswith('class ')):
+                # End of decorator chain
+                in_decorator_chain = False
+                # Don't add split point here to keep decorator with function/class
+            elif in_decorator_chain and line.strip() == '':
+                # Empty line ends decorator chain without function/class (unusual but possible)
+                in_decorator_chain = False
+                
+            # Check line against all patterns
+            if not in_decorator_chain:  # Don't match middle of decorator chains
+                for pattern in patterns:
+                    if re.match(pattern, line):
+                        chunk_points.append(line_start)
+                        break
+        
+        # Filter out points that are too close together
+        if chunk_points:
+            filtered_points = [chunk_points[0]]
+            
+            for point in chunk_points[1:]:
+                prev_point = filtered_points[-1]
+                # Convert byte positions to line numbers for distance check
+                prev_line = line_start_positions.index(prev_point)
+                current_line = line_start_positions.index(point)
+                
+                if current_line - prev_line >= self.min_distance:
+                    filtered_points.append(point)
+                    
+            return filtered_points
         
         return chunk_points
     
