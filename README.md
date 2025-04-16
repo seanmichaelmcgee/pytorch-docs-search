@@ -137,12 +137,19 @@ pytorch-docs-search/
 │   ├── document_processing/ # Document parsing and chunking
 │   ├── embedding/      # Embedding generation
 │   ├── search/         # Search interface
-│   ├── document_search.py  # Main search script
+│   ├── check_db_status.py   # Check ChromaDB status
+│   ├── check_embedding_progress.py # Monitor embedding generation
+│   ├── continue_embedding.py # Continue embedding generation
+│   ├── continue_loading.py  # Continue loading into ChromaDB
+│   ├── document_search.py   # Main search script
+│   ├── finalize_embedding.py # Finalize embedding process
 │   ├── generate_embeddings.py # Embedding generation script
-│   ├── index_documents.py # Document processing script
-│   ├── load_to_database.py # Database loading script
+│   ├── index_documents.py   # Document processing script
+│   ├── load_to_database.py  # Database loading script
+│   ├── merge_and_load.py    # Merge part files and load
 │   ├── migrate_embeddings.py # Model migration script
-│   └── register_tool.sh # Claude Code integration
+│   ├── register_tool.sh     # Claude Code integration
+│   └── resume_embedding.py  # Resume embedding generation
 ├── docs/               # Documentation
 ├── tests/              # Unit tests
 ├── .env                # Environment variables
@@ -191,6 +198,44 @@ Check system status:
 ```bash
 python scripts/monitor_system.py
 ```
+
+### Checking Database Status
+
+You can check the status of the ChromaDB database at any time:
+
+```bash
+python scripts/check_db_status.py
+```
+
+This will show you the number of chunks in each collection, their types, and sources.
+
+### Resuming Embedding Generation
+
+If the embedding generation process is interrupted, you can resume it:
+
+```bash
+python scripts/resume_embedding.py
+```
+
+This script will identify which chunks already have embeddings and only process the remaining ones.
+
+### Checking Embedding Progress
+
+To check the progress of the embedding generation process:
+
+```bash
+python scripts/check_embedding_progress.py
+```
+
+### Finalizing Embeddings
+
+After all embeddings are generated, you can finalize the process:
+
+```bash
+python scripts/finalize_embedding.py
+```
+
+This will merge all part files and load them into ChromaDB.
 
 ### Backups
 
