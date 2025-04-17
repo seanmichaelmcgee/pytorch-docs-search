@@ -33,18 +33,34 @@ This tool enables developers to efficiently search PyTorch documentation using n
    cd pytorch-docs-search
    ```
 
-2. Create and activate a virtual environment:
+2. Choose your environment setup method:
+
+   **Option A: Conda Environment (Strongly Recommended)**
    ```bash
+   # Automated setup (recommended)
+   ./setup_conda_env.sh
+   
+   # OR manually create the environment
+   conda env create -f environment.yml
+   conda activate pytorch_docs_search
+   
+   # Verify the environment is correctly set up
+   python test_conda_env.py
+   ```
+
+   **Option B: Python Virtual Environment (Only if Conda is unavailable)**
+   ```bash
+   # Create and activate a virtual environment
    python3 -m venv venv
    source venv/bin/activate
-   ```
-
-3. Install dependencies:
-   ```bash
+   
+   # Install dependencies
    pip install -r requirements.txt
    ```
+   
+   > **Note**: The Conda environment is strongly recommended for better dependency management and compatibility. The virtual environment option is maintained only for special cases where Conda cannot be used.
 
-4. Set up your environment variables:
+3. Set up your environment variables:
    ```bash
    cp .env.example .env
    # Edit .env file to add your OpenAI API key
@@ -129,10 +145,19 @@ To integrate with Claude Code CLI:
 
 ```
 pytorch-docs-search/
+├── backup/             # Backup of original environment
+│   ├── old_requirements.txt # Original pip requirements
+│   └── venv_backup/    # Backup of original virtual environment
 ├── data/               # Storage for processed docs and database
 │   ├── chroma_db/      # Vector database
 │   ├── embedding_cache/ # Cached embeddings
 │   └── indexed_chunks.json
+├── docs/               # Documentation
+│   ├── GUIDE.md        # Implementation guide
+│   ├── Journal.md      # Development journal
+│   ├── MIGRATION_REPORT.md # Environment migration report
+│   ├── conda_migration_checklist.md # Migration tasks tracking
+│   └── USER_GUIDE.md   # End-user documentation
 ├── scripts/            # Core scripts
 │   ├── config/         # Configuration module
 │   ├── database/       # ChromaDB integration
@@ -141,6 +166,7 @@ pytorch-docs-search/
 │   ├── search/         # Search interface
 │   ├── check_db_status.py   # Check ChromaDB status
 │   ├── check_embedding_progress.py # Monitor embedding generation
+│   ├── claude-code-tool.py  # Claude Code integration tool
 │   ├── continue_embedding.py # Continue embedding generation
 │   ├── continue_loading.py  # Continue loading into ChromaDB
 │   ├── document_search.py   # Main search script
@@ -149,13 +175,20 @@ pytorch-docs-search/
 │   ├── index_documents.py   # Document processing script
 │   ├── load_to_database.py  # Database loading script
 │   ├── merge_and_load.py    # Merge part files and load
+│   ├── merge_parts.py       # Merge chunked parts
 │   ├── migrate_embeddings.py # Model migration script
-│   ├── register_tool.sh     # Claude Code integration
-│   └── resume_embedding.py  # Resume embedding generation
-├── docs/               # Documentation
+│   ├── monitor_and_load.py  # Monitor embedding process
+│   ├── register_tool.sh     # Claude Code tool registration
+│   ├── resume_embedding.py  # Resume embedding generation
+│   └── validate_chunking.py # Validate document chunking
 ├── tests/              # Unit tests
 ├── .env                # Environment variables
-├── requirements.txt    # Dependencies
+├── CLAUDE.md           # Guidance for Claude Code
+├── environment.yml     # Conda environment configuration
+├── requirements.txt    # Pip dependencies (alternative to Conda)
+├── run_test_conda.sh   # Test script for Conda environment
+├── setup_conda_env.sh  # Conda environment setup script
+├── test_conda_env.py   # Environment validation script
 └── README.md           # This file
 ```
 
@@ -266,6 +299,15 @@ python scripts/benchmark_embeddings.py
 ```
 
 ## 🔍 Troubleshooting
+
+### Environment Setup Issues
+
+If you encounter issues with the Conda environment:
+- Use the included validation script: `python test_conda_env.py`
+- Check for version conflicts with `conda list`
+- Try recreating the environment with `setup_conda_env.sh`
+- Ensure your terminal session is fresh (no other environments active)
+- For known compatibility issues, see docs/MIGRATION_REPORT.md
 
 ### API Key Issues
 

@@ -276,3 +276,77 @@ This journal tracks the progress, challenges, and solutions during the developme
 - New algorithm will provide more coherent search results for code queries
 
 ---
+
+### April 17, 2025 - Environment Migration to Conda
+
+#### Work Completed
+- Created environment.yml file with appropriate dependencies
+- Created setup_conda_env.sh script for automating Conda environment setup
+- Backed up original venv in backup/venv_backup directory
+- Updated README.md with Conda installation instructions
+- Created MIGRATION_REPORT.md documenting the migration process
+
+#### Challenges Encountered
+- Environment activation issues when existing Python virtual environment is active
+- Balancing dependencies between conda-forge and pip
+- Ensuring compatible versions across all packages
+
+#### Solutions Implemented
+- Added deactivation step in setup_conda_env.sh to prevent environment conflicts
+- Used source "$(conda info --base)/etc/profile.d/conda.sh" to ensure proper Conda path
+- Created comprehensive test_conda_env.py to verify installation
+- Implemented validation testing script (run_test_conda.sh)
+
+#### Next Steps
+- Update CLAUDE.md with Conda setup instructions
+- Run the complete test suite in the Conda environment
+- Verify all components function correctly in the new environment
+- Check and update any remaining references to the old venv environment
+
+#### Notes
+- The setup_conda_env.sh script will prompt users if the environment already exists
+- The script runs test_conda_env.py to validate correct installation
+- Environment.yml includes specific versions to ensure reproducibility
+- Both Conda and venv options are maintained for flexibility
+
+---
+
+### April 17, 2025 - Conda Environment Validation and Finalization
+
+#### Work Completed
+- Created `setup_conda_env.sh` script for automating Conda environment setup
+- Improved `run_test_conda.sh` with robust Conda path detection
+- Updated documentation to prioritize Conda as the recommended environment
+- Identified and resolved package compatibility issues:
+  - Modified NumPy version to 1.26.4 (pre-NumPy 2.0) for better compatibility
+  - Moved chromadb to pip installation to avoid dependency conflicts
+  - Added specific Werkzeug version compatible with Flask
+- Updated MIGRATION_REPORT.md with comprehensive details of changes and challenges
+- Conducted validation testing to verify environment functionality
+
+#### Challenges Encountered
+- Dependency conflicts between NumPy 2.0+ and chromadb
+- Flask import errors related to Werkzeug compatibility
+- Conda activation path resolution in shell scripts
+- Various environment activation edge cases
+
+#### Solutions Implemented
+- Utilized conda info --base for dynamic path resolution
+- Implemented careful dependency version pinning
+- Created strategic mix of conda and pip package installations
+- Added improved error handling and feedback in scripts
+- Enhanced documentation with clear guidance for environment usage
+
+#### Next Steps
+- Run complete test suite in the new environment
+- Final validation of search functionality with updated dependencies
+- Update any CI/CD pipelines to use the Conda environment
+- Document lessons learned for future environment migrations
+
+#### Notes
+- The final environment.yml provides a balance of stability and functionality
+- All key components should work with the updated dependencies
+- Scripts include validation checks to ensure proper environment setup
+- Setup process is now more user-friendly with clear success criteria
+
+---
