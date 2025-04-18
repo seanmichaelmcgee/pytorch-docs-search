@@ -15,6 +15,7 @@ This tool enables developers to efficiently search PyTorch documentation using n
 - Progressive timeout with partial results
 - Claude Code CLI integration
 - Incremental document updates
+- Robust API compatibility handling for OpenAI SDK
 
 ## 🚀 Getting Started
 
@@ -309,11 +310,16 @@ If you encounter issues with the Conda environment:
 - Ensure your terminal session is fresh (no other environments active)
 - For known compatibility issues, see docs/MIGRATION_REPORT.md
 
-### API Key Issues
+### API Key and SDK Issues
 
 If you encounter API key errors:
 - Check that your `.env` file contains a valid `OPENAI_API_KEY`
 - Verify the key has access to the embedding models
+
+If you encounter OpenAI client errors:
+- Our robust client initialization should handle most API compatibility issues
+- For persistent errors, check the OpenAI SDK version compatibility with the installed httpx version
+- Monitor logs for "Creating custom HTTP client for OpenAI compatibility" which indicates fallback is being used
 
 ### Memory Issues
 

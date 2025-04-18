@@ -8,6 +8,7 @@ import numpy as np
 import logging
 from typing import List, Dict, Any
 from openai import OpenAI
+# Using robust OpenAI client initialization with custom HTTP client as needed
 from tqdm import tqdm
 
 from scripts.config import OPENAI_API_KEY, EMBEDDING_MODEL

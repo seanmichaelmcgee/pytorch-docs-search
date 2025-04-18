@@ -20,8 +20,24 @@ class QueryProcessor:
         """
         self.model = model
         
-        # Initialize OpenAI client
-        self.client = OpenAI(api_key=OPENAI_API_KEY)
+        # Initialize OpenAI client with error handling for compatibility issues
+        try:
+            # First attempt: standard initialization
+            self.client = OpenAI(api_key=OPENAI_API_KEY)
+            logger.info("OpenAI client initialized successfully")
+        except TypeError as e:
+            # If 'proxies' parameter error occurs, try with a basic HTTP client
+            if "unexpected keyword argument 'proxies'" in str(e):
+                import httpx
+                logger.info("Creating custom HTTP client for OpenAI compatibility")
+                # Create a simple HTTP client without the problematic parameters
+                http_client = httpx.Client(timeout=60.0)
+                self.client = OpenAI(api_key=OPENAI_API_KEY, http_client=http_client)
+                logger.info("OpenAI client initialized with custom HTTP client")
+            else:
+                # For other TypeError issues, log and re-raise
+                logger.error(f"Unexpected TypeError initializing OpenAI client: {str(e)}")
+                raise
         
         # Cache for storing query embeddings (reuses the embedding cache)
         if use_cache:

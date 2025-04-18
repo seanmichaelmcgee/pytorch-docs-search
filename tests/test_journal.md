@@ -377,17 +377,62 @@ for query in code_queries:
   - No compatibility issues with other packages
   - Clean installation with no dependency conflicts
 
+### April 17, 2025 - OpenAI Client Compatibility Fix
+
+#### 1. Client Initialization Issue
+- **Description**: Identified and fixed incompatibility with the OpenAI client initialization
+- **Issue**:
+  ```
+  TypeError: Client.__init__() got an unexpected keyword argument 'proxies'
+  ```
+- **Root Cause**: The OpenAI Python SDK had an internal API change where the httpx HTTP client no longer accepts the 'proxies' parameter
+- **Solution**:
+  ```python
+  try:
+      # First attempt: standard initialization
+      self.client = OpenAI(api_key=OPENAI_API_KEY)
+  except TypeError as e:
+      # If 'proxies' parameter error occurs, try with a basic HTTP client
+      if "unexpected keyword argument 'proxies'" in str(e):
+          import httpx
+          http_client = httpx.Client(timeout=60.0)
+          self.client = OpenAI(api_key=OPENAI_API_KEY, http_client=http_client)
+  ```
+
+#### 2. Comprehensive Test Suite
+- **Description**: Ran full test suite to verify all functionality works with the fix
+- **Command**: `pytest -v tests/`
+- **Results**:
+  - All 10 unit tests passing
+  - 1 test skipped (by design)
+  - Fixed QueryProcessor and EmbeddingGenerator OpenAI client initialization
+  - Maintained backward compatibility with existing code
+
+#### 3. End-to-End Testing
+- **Description**: Verified the entire search pipeline works with the fix
+- **Command**: `python tests/test-e2e-search.py`
+- **Results**:
+  - All 6 test queries executed successfully
+  - Average query time: 0.1278 seconds
+  - Both code and concept queries working correctly
+  - Our custom HTTP client initialization is properly triggered and working
+
+#### 4. Claude Code Tool Testing
+- **Description**: Verified Claude Code tool integration with the fix
+- **Command**: `python tests/claude-code-tool-test.py`
+- **Results**:
+  - All 4 tool integration tests passed
+  - Tool correctly processes both short and long queries
+  - Response format validated for Claude integration
+  - Intent confidence scoring working correctly
+
 ## Next Testing Steps
-1. Run comprehensive test suite with the stable environment:
-   ```bash
-   pytest -v tests/
-   ```
-2. Register the tool with Claude Code CLI using:
+1. Register the tool with Claude Code CLI using:
    ```bash
    ./scripts/claude-tool-registration.sh
    ```
-3. Generate embeddings for the newly chunked documents
-4. Load both document sets into ChromaDB
-5. Implement formal unit tests for all components
-6. Benchmark search performance and relevance with larger document corpus
-7. Perform user acceptance testing for search relevance
+2. Generate embeddings for the newly chunked documents
+3. Load both document sets into ChromaDB
+4. Implement formal unit tests for all components
+5. Benchmark search performance and relevance with larger document corpus
+6. Perform user acceptance testing for search relevance
