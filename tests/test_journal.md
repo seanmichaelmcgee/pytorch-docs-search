@@ -324,13 +324,70 @@ for query in code_queries:
   - Graceful degradation observed in all test cases
   - Successfully returned meaningful partial results even when timeouts occurred
 
+### April 17, 2025 - Environment Stability Testing
+
+#### 1. Environment Setup Testing
+- **Description**: Tested the stability and functionality of the new Mamba/Conda environment
+- **Command**: 
+  ```bash
+  ./setup_conda_env.sh
+  ```
+- **Results**:
+  - Successfully created environment with all required dependencies
+  - Environment activation working correctly across shell sessions
+  - Python 3.10.17 successfully installed and working
+  - Stable NumPy 1.24.3 correctly installed (pre-NumPy 2.0)
+  - All package imports validated through test_conda_env.py
+
+#### 2. ChromaDB Compatibility Testing
+- **Description**: Verified ChromaDB functionality with the updated NumPy version
+- **Command**:
+  ```python
+  import chromadb
+  client = chromadb.Client()
+  collection = client.create_collection("test_collection")
+  collection.add(
+      documents=["Test document for environment validation"],
+      metadatas=[{"source": "environment_test"}],
+      ids=["test1"]
+  )
+  results = collection.query(query_texts=["test document"], n_results=1)
+  print(results)
+  ```
+- **Results**:
+  - ChromaDB 0.4.18 successfully loaded and functional
+  - Collection creation, document addition, and querying all working
+  - No NumPy type errors or deprecation warnings
+  - Successfully handles embedding operations
+  - Results returned in expected format
+
+#### 3. PyTorch Integration Testing
+- **Description**: Validated PyTorch installation and functionality
+- **Command**:
+  ```python
+  import torch
+  x = torch.rand(3, 3)
+  print(f"PyTorch tensor: {x}")
+  print(f"CUDA available: {torch.cuda.is_available()}")
+  ```
+- **Results**:
+  - PyTorch 2.6.0 successfully installed via pip
+  - Tensor creation and manipulation working correctly
+  - CUDA detection functioning properly
+  - No compatibility issues with other packages
+  - Clean installation with no dependency conflicts
+
 ## Next Testing Steps
-1. Register the tool with Claude Code CLI using:
+1. Run comprehensive test suite with the stable environment:
+   ```bash
+   pytest -v tests/
+   ```
+2. Register the tool with Claude Code CLI using:
    ```bash
    ./scripts/claude-tool-registration.sh
    ```
-2. Generate embeddings for the newly chunked documents
-3. Load both document sets into ChromaDB
-4. Implement formal unit tests for all components
-5. Benchmark search performance and relevance with larger document corpus
-6. Perform user acceptance testing for search relevance
+3. Generate embeddings for the newly chunked documents
+4. Load both document sets into ChromaDB
+5. Implement formal unit tests for all components
+6. Benchmark search performance and relevance with larger document corpus
+7. Perform user acceptance testing for search relevance

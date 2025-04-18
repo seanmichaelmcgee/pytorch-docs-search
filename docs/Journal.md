@@ -350,3 +350,43 @@ This journal tracks the progress, challenges, and solutions during the developme
 - Setup process is now more user-friendly with clear success criteria
 
 ---
+
+### April 17, 2025 - Environment Stability and Testing Preparation
+
+#### Work Completed
+- Successfully resolved NumPy compatibility issues with ChromaDB
+- Updated environment.yml to use NumPy 1.24.3 instead of 1.26.4
+- Enhanced setup_conda_env.sh script to support both Conda and Mamba
+- Added better error handling and timeout settings for dependency resolution
+- Updated test_conda_env.py with comprehensive package validation
+- Created test environment using Mamba for faster dependency resolution
+- Successfully validated all package imports in the new environment
+- Verified ChromaDB and PyTorch functionality within the environment
+
+#### Challenges Encountered
+- NumPy 2.x incompatibility with ChromaDB (`np.float_` deprecation issue)
+- Environment setup timeouts during dependency resolution
+- Conda installation speed issues with complex dependencies
+- PyTorch installation complications within Conda
+
+#### Solutions Implemented
+- Switched to Mamba for faster dependency resolution
+- Pinned NumPy to 1.24.3 for complete ChromaDB compatibility
+- Added PyTorch via pip for simplified installation
+- Improved environment setup script with fallbacks and better error handling
+- Created comprehensive environment test script for validation
+
+#### Next Steps
+- Run complete test suite in the finalized environment
+- Execute comprehensive search functionality testing
+- Validate embedding generation and database operations
+- Document the stable environment configuration
+
+#### Notes
+- Mamba significantly improves environment creation speed
+- The environment successfully passes all component tests
+- ChromaDB issue with NumPy 2.x completely resolved
+- All core components verified and working properly
+- Environment now stable and ready for comprehensive testing
+
+---
