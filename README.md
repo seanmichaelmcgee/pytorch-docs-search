@@ -133,14 +133,34 @@ The embedding cache ensures efficient processing by avoiding regenerating embedd
 
 ### Claude Code Integration
 
-To integrate with Claude Code CLI:
+#### Legacy Integration
+For the original Claude Code integration:
 
-1. Register the search tool:
+```bash
+python scripts/register_tool.sh
+```
+
+#### Enhanced MCP Integration (Recommended)
+For the improved Model-Context Protocol (MCP) integration:
+
+1. Start the Flask API server:
    ```bash
-   python scripts/register_tool.sh
+   python app.py
    ```
 
-2. The tool will be available to Claude through the MCP protocol
+2. Register the MCP tool with Claude:
+   ```bash
+   claude mcp add mcp__pytorch_docs__semantic_search "http://localhost:5000/search" \
+     --description "Search PyTorch documentation with code-aware semantic search" \
+     --transport sse
+   ```
+
+3. Test the tool:
+   ```bash
+   claude run tool mcp__pytorch_docs__semantic_search --input '{"query": "batch normalization"}'
+   ```
+
+For complete documentation on the MCP integration, see [MCP_INTEGRATION.md](docs/MCP_INTEGRATION.md)
 
 ## 📦 Project Structure
 
